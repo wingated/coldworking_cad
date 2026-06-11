@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Coldworking CAD — standalone visualizer</title>
+<link rel="stylesheet" href="css/style.css">
+<style>
+  #drop {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 12px;
+    color: var(--text-dim); z-index: 10; background: rgba(20,22,27,0.92);
+  }
+  #drop.hidden { display: none; }
+  #wrap { position: relative; height: 100%; display: flex; }
+</style>
+</head>
+<body>
+<header id="topbar">
+  <div class="brand">Coldworking&nbsp;Visualizer</div>
+  <div class="spacer"></div>
+  <button id="btn-open">Open .render.json</button>
+  <button id="btn-png">Save PNG</button>
+</header>
+<main>
+<div id="wrap" class="tab active" style="display:flex">
+  <aside id="render-panel">
+    <h2>Ray Tracer</h2>
+    <p class="hint">Drop a <code>.render.json</code> file exported from the
+      Design app, or click Open. Drag to orbit, wheel to zoom.</p>
+    <label>Max bounces <input id="rt-bounces" type="number" min="2" max="80" value="24"></label>
+    <label>Light intensity <input id="rt-env" type="number" min="0.1" max="10" step="0.1" value="1.0"></label>
+    <label>Exposure <input id="rt-exposure" type="number" min="0.05" max="20" step="0.05" value="1.0"></label>
+    <label>Resolution scale <input id="rt-scale" type="number" min="0.25" max="2" step="0.25" value="1.0"></label>
+    <label class="check"><input id="rt-dispersion" type="checkbox" checked> Dispersion</label>
+    <label class="check"><input id="rt-floor" type="checkbox"> Matte floor</label>
+    <div class="row"><button id="rt-restart">Restart accumulation</button></div>
+    <div id="render-stats" class="hint"></div>
+    <div id="render-error" class="error"></div>
+  </aside>
+  <div id="render-canvas-wrap" style="position:relative">
+    <canvas id="render-canvas"></canvas>
+    <div id="drop"><h2>Drop a .render.json scene here</h2>
+      <p>Export one from the Design app: Render tab → "Export scene".</p></div>
+  </div>
+</div>
+</main>
+<input type="file" id="file-input" accept=".json,application/json" class="hidden">
+<script type="module">
+import { PathTracer } from './js/raytracer/pathtracer.js';
+
+const $ = (s) => document.querySelector(s);
+let tracer = null;
+const cam = { theta: 0.7, phi: 0.5, dist: 8, target: [0, 0, 0] };
+
+function ensureTracer() {
+  if (tracer) return tracer;
+  try {
+    tracer = new PathTracer($('#render-canvas'));
+    tracer.onProgress = (s) => {
+      $('#render-stats').textContent =
+        `${s} samples/pixel · ${tracer.scene.triangles.matFront.length} triangles`;
+    };
+    bindControls();
+  } catch (err) {
+    $('#render-error').textContent = err.message;
+  }
+  return tracer;
+}
+
+function applyCamera() {
+  const cp = Math.cos(cam.phi), sp = Math.sin(cam.phi);
+  const ct = Math.cos(cam.theta), st = Math.sin(cam.theta);
+  const eye = [
+    cam.target[0] + cp * ct * cam.dist,
+    cam.target[1] + sp * cam.dist,
+    cam.target[2] + cp * st * cam.dist,
+  ];
+  tracer.setCamera({ eye, target: cam.target.slice(), fov: 40 * Math.PI / 180 });
+}
+
+function loadScene(scene) {
+  if (scene.format !== 'coldworking-render-scene') {
+    $('#render-error').textContent = 'Not a coldworking render scene file.';
+    return;
+  }
+  const t = ensureTracer();
+  if (!t) return;
+  scene.triangles.positions = new Float32Array(scene.triangles.positions);
+  scene.triangles.normals = new Float32Array(scene.triangles.normals);
+  const bb = scene.bbox;
+  cam.target = [(bb.min[0] + bb.max[0]) / 2, (bb.min[1] + bb.max[1]) / 2, (bb.min[2] + bb.max[2]) / 2];
+  const size = Math.hypot(bb.max[0] - bb.min[0], bb.max[1] - bb.min[1], bb.max[2] - bb.min[2]);
+  cam.dist = Math.max(2, size * 1.6);
+  t.setScene(scene);
+  t.setOptions({ floorY: bb.min[1] - 1e-4 });
+  applyCamera();
+  t.start();
+  $('#drop').classList.add('hidden');
+  document.title = `${scene.projectName ?? 'sculpture'} — Coldworking Visualizer`;
+}
+
+function bindControls() {
+  const canvas = $('#render-canvas');
+  let drag = null;
+  canvas.addEventListener('pointerdown', (e) => {
+    canvas.setPointerCapture(e.pointerId);
+    drag = { x: e.clientX, y: e.clientY };
+  });
+  canvas.addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    cam.theta += (e.clientX - drag.x) * 0.008;
+    cam.phi = Math.max(-1.5, Math.min(1.5, cam.phi + (e.clientY - drag.y) * 0.008));
+    drag = { x: e.clientX, y: e.clientY };
+    applyCamera();
+  });
+  canvas.addEventListener('pointerup', () => { drag = null; });
+  canvas.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    cam.dist = Math.max(0.3, Math.min(300, cam.dist * Math.exp(e.deltaY * 0.0012)));
+    applyCamera();
+  }, { passive: false });
+
+  const opt = () => tracer.setOptions({
+    bounces: parseInt($('#rt-bounces').value) || 24,
+    envIntensity: parseFloat($('#rt-env').value) || 1,
+    exposure: parseFloat($('#rt-exposure').value) || 1,
+    scale: parseFloat($('#rt-scale').value) || 1,
+    dispersion: $('#rt-dispersion').checked,
+    floor: $('#rt-floor').checked,
+  });
+  for (const id of ['#rt-bounces', '#rt-env', '#rt-exposure', '#rt-scale', '#rt-dispersion', '#rt-floor']) {
+    $(id).addEventListener('change', opt);
+  }
+  $('#rt-restart').onclick = () => tracer.reset();
+  opt();
+}
+
+async function openFile(file) {
+  try {
+    loadScene(JSON.parse(await file.text()));
+  } catch (err) {
+    $('#render-error').textContent = `Could not load: ${err.message}`;
+  }
+}
+
+$('#btn-open').onclick = () => $('#file-input').click();
+$('#file-input').onchange = (e) => { if (e.target.files[0]) openFile(e.target.files[0]); };
+$('#btn-png').onclick = () => {
+  const a = document.createElement('a');
+  a.download = 'render.png';
+  a.href = $('#render-canvas').toDataURL('image/png');
+  a.click();
+};
+document.addEventListener('dragover', (e) => e.preventDefault());
+document.addEventListener('drop', (e) => {
+  e.preventDefault();
+  if (e.dataTransfer.files[0]) openFile(e.dataTransfer.files[0]);
+});
+</script>
+</body>
+</html>

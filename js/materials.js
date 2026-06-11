@@ -160,6 +160,7 @@ export function materialCauchy(mat) {
 
 // UI swatch colors.
 export function materialSwatch(mat) {
+  if (!mat || (mat.kind !== 'crystal' && !mat.bands)) return '#888';
   if (mat.kind === 'crystal') {
     // Higher index -> render swatch slightly brighter/cooler to differentiate.
     const t = Math.min(1, (mat.nd - 1.45) / 0.5);

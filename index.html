@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Coldworking CAD — glass sculpture design &amp; spectral rendering</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<header id="topbar">
+  <div class="brand">Coldworking&nbsp;CAD</div>
+  <input id="project-name" title="Project name" value="Untitled sculpture">
+  <div class="topgroup">
+    <button id="btn-new" title="New project">New</button>
+    <button id="btn-projects" title="Open a saved project">Open</button>
+    <button id="btn-import" title="Import a .coldwork.json file">Import</button>
+    <button id="btn-export" title="Download project as .coldwork.json">Export</button>
+  </div>
+  <div class="topgroup">
+    <button id="btn-save-version" title="Snapshot the current state as a named version">Save Version</button>
+    <button id="btn-versions" title="Browse and restore versions">Versions</button>
+  </div>
+  <div class="spacer"></div>
+  <nav class="tabs">
+    <button id="tab-design" class="active">Design</button>
+    <button id="tab-render">Render</button>
+  </nav>
+</header>
+
+<main>
+  <!-- ======================= DESIGN TAB ======================= -->
+  <div id="design-tab" class="tab active">
+    <aside id="left-panel">
+      <section>
+        <h2>Materials <span class="hint">(click to select)</span></h2>
+        <div id="material-list"></div>
+        <div class="row">
+          <button id="btn-add-crystal">+ Crystal</button>
+          <button id="btn-add-dichroic">+ Dichroic</button>
+        </div>
+      </section>
+      <section>
+        <h2>Pieces <span id="piece-count" class="hint"></span></h2>
+        <div id="piece-list"></div>
+      </section>
+    </aside>
+
+    <div id="viewport-area">
+      <div id="toolbar"></div>
+      <canvas id="design-canvas"></canvas>
+      <div id="status-bar">Ready.</div>
+    </div>
+
+    <aside id="right-panel">
+      <div id="tool-panel"></div>
+      <div id="selection-panel"></div>
+    </aside>
+  </div>
+
+  <!-- ======================= RENDER TAB ======================= -->
+  <div id="render-tab" class="tab">
+    <aside id="render-panel">
+      <h2>Ray Tracer</h2>
+      <p class="hint">Progressive spectral path tracing on the GPU.
+        Drag to orbit, wheel to zoom.</p>
+      <label>Max bounces <input id="rt-bounces" type="number" min="2" max="80" value="24"></label>
+      <label>Light intensity <input id="rt-env" type="number" min="0.1" max="10" step="0.1" value="1.0"></label>
+      <label>Exposure <input id="rt-exposure" type="number" min="0.05" max="20" step="0.05" value="1.0"></label>
+      <label>Resolution scale <input id="rt-scale" type="number" min="0.25" max="2" step="0.25" value="1.0"></label>
+      <label class="check"><input id="rt-dispersion" type="checkbox" checked> Dispersion (spectral fire)</label>
+      <label class="check"><input id="rt-floor" type="checkbox"> Matte floor</label>
+      <div class="row">
+        <button id="rt-update" class="primary">Update scene</button>
+        <button id="rt-restart">Restart</button>
+      </div>
+      <div class="row">
+        <button id="rt-save-png">Save PNG</button>
+        <button id="rt-export-scene" title="Export the render scene JSON for the standalone visualizer">Export scene</button>
+      </div>
+      <div id="render-stats" class="hint"></div>
+      <div id="render-error" class="error"></div>
+    </aside>
+    <div id="render-canvas-wrap"><canvas id="render-canvas"></canvas></div>
+  </div>
+</main>
+
+<div id="modal-backdrop" class="hidden">
+  <div id="modal"></div>
+</div>
+
+<input type="file" id="file-input" accept=".json,application/json" class="hidden">
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
