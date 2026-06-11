@@ -104,12 +104,20 @@ Progressive path tracing in a WebGL2 fragment shader (BVH-accelerated):
   floor, ACES tonemapping, adjustable bounces/exposure/resolution.
 - **Save PNG** of the current accumulation.
 
-### Standalone visualizer
+### Standalone visualizers
 
-`render.html` is a standalone viewer for `.render.json` scene files
-(Render tab → **Export scene**). Drop a file on it and orbit. The scene
-format is documented below — it is also a convenient interchange format if
-you later want to feed an OptiX/Metal renderer.
+`render.html` is a browser-based standalone viewer for `.render.json` scene
+files (Render tab → **Export scene**). Drop a file on it and orbit.
+
+**[`viewer/`](viewer/README.md)** is a compiled native viewer (Rust + wgpu:
+Vulkan on Linux, Metal on macOS) running the same spectral algorithm in a
+GPU compute shader. It **watches the loaded file and hot-reloads it on
+change**, so you can keep exporting from the CAD app and see updates live:
+
+```bash
+cd viewer && cargo build --release
+./target/release/coldworking-viewer ../demo.render.json
+```
 
 ## File formats
 
@@ -143,6 +151,12 @@ node tests/test_raytrace_cpu.mjs   # CPU mirror of the GPU tracer physics
 
 # CPU reference render of the demo scene (validates the whole pipeline):
 node tools/render_cpu.mjs 480 360 64 out.png
+
+# Export the demo as a .render.json for the native viewer:
+node tools/export_demo_scene.mjs demo.render.json
+
+# Native viewer tests (validates WGSL shaders + scene loading, no GPU needed):
+cd viewer && cargo test
 ```
 
 Source layout:
@@ -160,5 +174,6 @@ js/ui.js                 tools, panels, dialogs, render-tab wiring
 js/raytracer/bvh.js      BVH builder
 js/raytracer/pathtracer.js  WebGL2 spectral path tracer
 js/demo.js               demo sculpture
-render.html              standalone visualizer
+render.html              standalone browser visualizer
+viewer/                  native real-time viewer (Rust + wgpu, hot-reload)
 ```
