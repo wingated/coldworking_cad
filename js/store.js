@@ -12,7 +12,13 @@ function readJSON(key, fallback) {
 }
 
 function writeJSON(key, value) {
-  localStorage.setItem(key, JSON.stringify(value));
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch (err) {
+    // Quota exceeded or storage disabled: keep the app usable; the user can
+    // still export to a file.
+    console.warn('Project autosave failed:', err.message);
+  }
 }
 
 export class ProjectStore {

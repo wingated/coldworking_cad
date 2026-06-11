@@ -345,6 +345,20 @@ export function raycastPoly(poly, origin, dir) {
   return { t, faceIndex: tmin > 0 ? enterFace : -1, tEnter: tmin, tExit: tmax };
 }
 
+// Volume of the intersection of two convex polyhedra (0 if disjoint).
+// Used to warn about physically impossible interpenetrating pieces.
+export function convexIntersectionVolume(a, b) {
+  let cur = clonePoly(a);
+  for (const f of b.faces) {
+    const n = faceNormal(b, f);
+    const d = V.dot(n, b.verts[f.indices[0]]);
+    const r = clipPoly(cur, n, d);
+    if (!r.kept) return 0;
+    cur = r.kept;
+  }
+  return polyVolume(cur);
+}
+
 // ---------------------------------------------------------------------------
 // 2D convex polygon helpers, used for detecting glued (coincident) faces at
 // export time so the renderer sees a single seamless interface.

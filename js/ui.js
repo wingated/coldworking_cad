@@ -645,6 +645,12 @@ export function initApp() {
       return;
     }
     if (mod && e.key.toLowerCase() === 'y') { e.preventDefault(); model.redo(); refreshAll(); return; }
+    if (mod && e.key.toLowerCase() === 's') {
+      e.preventDefault();
+      store.saveCurrent();
+      status('Project saved.');
+      return;
+    }
     if (e.key === 'Delete' || e.key === 'Backspace') { deleteSelection(); return; }
     if (e.key === 'Escape') { activateTool('select'); clearSelection(); return; }
     if (e.key.toLowerCase() === 'f') { viewport.fitView(); return; }
@@ -895,13 +901,16 @@ export function initApp() {
     scene.triangles.normals = new Float32Array(scene.triangles.normals);
     tracer.setScene(scene);
     tracer.setOptions({ floorY: scene.bbox.min[1] - 1e-4 });
-    if (scene.materials.length > 16) {
-      $('#render-error').textContent = 'More than 15 distinct materials; extras render as the last material.';
-    } else if (scene.coatings.length > 16) {
-      $('#render-error').textContent = 'More than 16 distinct coatings; extras are ignored.';
-    } else {
-      $('#render-error').textContent = '';
+    const warnings = [];
+    if (scene.materials.length > 16) warnings.push('More than 15 distinct materials; extras render incorrectly.');
+    if (scene.coatings.length > 16) warnings.push('More than 16 distinct coatings; extras are ignored.');
+    const overlaps = model.findOverlaps();
+    if (overlaps.length) {
+      const names = overlaps.slice(0, 3).map((o) =>
+        `${model.getPiece(o.a)?.name} ∩ ${model.getPiece(o.b)?.name}`).join('; ');
+      warnings.push(`${overlaps.length} piece pair(s) interpenetrate (${names}${overlaps.length > 3 ? '…' : ''}) — real glass can't overlap, and the render will be wrong there.`);
     }
+    $('#render-error').textContent = warnings.join('\n');
   }
 
   function startRender() {

@@ -5,7 +5,7 @@
 
 import {
   makeBox, clipPoly, clonePoly, transformPoly, chamferPoly, offsetFace,
-  faceNormal, faceCentroid, polyVolume, polyBBox,
+  faceNormal, faceCentroid, polyVolume, polyBBox, convexIntersectionVolume,
 } from './geometry.js';
 import { V, Q, DEG } from './math.js';
 import { MaterialLibrary, DICHROIC_THICKNESS } from './materials.js';
@@ -378,6 +378,28 @@ export class Model {
       if (p) p.visible = visible;
     }
     this._notify();
+  }
+
+  // Pairs of visible pieces whose solids interpenetrate (more than a glue
+  // tolerance) — physically impossible in coldworked glass, and ambiguous
+  // for the renderer. Returns [{a, b, volume}].
+  findOverlaps(tolerance = 1e-4) {
+    const out = [];
+    const pieces = this.pieces.filter((p) => p.visible);
+    for (let i = 0; i < pieces.length; i++) {
+      const wa = this.worldPoly(pieces[i]);
+      const ba = polyBBox(wa);
+      for (let j = i + 1; j < pieces.length; j++) {
+        const wb = this.worldPoly(pieces[j]);
+        const bb = polyBBox(wb);
+        if (ba.min[0] > bb.max[0] + tolerance || bb.min[0] > ba.max[0] + tolerance ||
+            ba.min[1] > bb.max[1] + tolerance || bb.min[1] > ba.max[1] + tolerance ||
+            ba.min[2] > bb.max[2] + tolerance || bb.min[2] > ba.max[2] + tolerance) continue;
+        const vol = convexIntersectionVolume(wa, wb);
+        if (vol > tolerance) out.push({ a: pieces[i].id, b: pieces[j].id, volume: vol });
+      }
+    }
+    return out;
   }
 
   pieceInfo(id) {

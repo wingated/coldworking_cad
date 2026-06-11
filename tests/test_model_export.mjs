@@ -185,5 +185,18 @@ function areaOfTris(scene, filter) {
   check('chamfered block exports', triCount(scene) > 12);
 }
 
+// --- Overlap detection ---
+{
+  const m = new Model();
+  m.addBlock('crystal_bk7', 1, 1, 1, [0, 0, 0]);
+  m.addBlock('crystal_bk7', 1, 1, 1, [1, 0, 0]); // face-touching: NOT an overlap
+  check('glued pieces do not count as overlap', m.findOverlaps().length === 0);
+  m.addBlock('crystal_bk7', 1, 1, 1, [0.5, 0, 0]); // interpenetrates both
+  const ov = m.findOverlaps();
+  check('interpenetration detected', ov.length === 2, `${ov.length}`);
+  check('overlap volume correct', ov.every((o) => approx(o.volume, 0.5, 1e-3)),
+    ov.map((o) => o.volume.toFixed(4)).join(','));
+}
+
 console.log(failures === 0 ? '\nAll model/export tests passed.' : `\n${failures} test(s) FAILED.`);
 process.exit(failures === 0 ? 0 : 1);
