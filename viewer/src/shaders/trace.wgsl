@@ -15,7 +15,7 @@ struct Uniforms {
     up: vec3f,
     flags: u32,            // bit0: dispersion, bit1: floor
     fwd: vec3f,
-    _pad0: u32,
+    samples: u32,          // paths per pixel per dispatch
     res: vec2f,
     tan_fov: f32,
     aspect: f32,
@@ -183,16 +183,9 @@ fn cosine_hemisphere(n: vec3f) -> vec3f {
     return normalize(t * (cos(phi) * sr) + b * (sin(phi) * sr) + n * sqrt(1.0 - r2));
 }
 
-@compute @workgroup_size(8, 8)
-fn main(@builtin(global_invocation_id) gid: vec3u) {
-    let w = u32(u.res.x);
-    let h = u32(u.res.y);
-    if (gid.x >= w || gid.y >= h) { return; }
-    srand(gid.xy, u.frame);
-
-    // Hero wavelength for this path.
-    let lambda = LAMBDA_MIN + rnd() * LAMBDA_RANGE;
-
+// Trace one full spectral path from the camera through pixel `gid` and
+// return its radiance at wavelength `lambda`.
+fn trace_path(gid: vec3u, lambda: f32) -> f32 {
     // Camera ray with AA jitter; row 0 is the top of the image.
     let jitter = vec2f(rnd(), rnd()) - 0.5;
     let px = (f32(gid.x) + 0.5 + jitter.x) / u.res.x * 2.0 - 1.0;
@@ -280,16 +273,34 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
         }
         ro = hit_p + rd * 1e-4;
     }
+    return radiance;
+}
 
-    // Spectral radiance -> XYZ -> linear sRGB (white-balanced for an
-    // equal-energy spectrum: constants precomputed from the CMF fit).
-    let xyz = cie(lambda) * radiance * 3.10;
-    var rgb = vec3f(
-        3.2406 * xyz.x - 1.5372 * xyz.y - 0.4986 * xyz.z,
-        -0.9689 * xyz.x + 1.8758 * xyz.y + 0.0415 * xyz.z,
-        0.0557 * xyz.x - 0.2040 * xyz.y + 1.0570 * xyz.z,
-    ) * vec3f(0.8329, 1.0529, 1.1017);
+@compute @workgroup_size(8, 8)
+fn main(@builtin(global_invocation_id) gid: vec3u) {
+    let w = u32(u.res.x);
+    let h = u32(u.res.y);
+    if (gid.x >= w || gid.y >= h) { return; }
+
+    let n_samples = max(u.samples, 1u);
+    var sum = vec3f(0.0);
+    for (var s = 0u; s < n_samples; s++) {
+        srand(gid.xy, u.frame + s);
+
+        // Hero wavelength for this path.
+        let lambda = LAMBDA_MIN + rnd() * LAMBDA_RANGE;
+        let radiance = trace_path(gid, lambda);
+
+        // Spectral radiance -> XYZ -> linear sRGB (white-balanced for an
+        // equal-energy spectrum: constants precomputed from the CMF fit).
+        let xyz = cie(lambda) * radiance * 3.10;
+        sum += vec3f(
+            3.2406 * xyz.x - 1.5372 * xyz.y - 0.4986 * xyz.z,
+            -0.9689 * xyz.x + 1.8758 * xyz.y + 0.0415 * xyz.z,
+            0.0557 * xyz.x - 0.2040 * xyz.y + 1.0570 * xyz.z,
+        ) * vec3f(0.8329, 1.0529, 1.1017);
+    }
 
     let idx = gid.y * w + gid.x;
-    accum[idx] += vec4f(rgb, 1.0);
+    accum[idx] += vec4f(sum, f32(n_samples));
 }

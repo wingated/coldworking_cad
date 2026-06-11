@@ -18,7 +18,7 @@ pub struct Uniforms {
     pub up: [f32; 3],
     pub flags: u32, // bit0 dispersion, bit1 floor, bit2 srgb surface
     pub fwd: [f32; 3],
-    pub _pad0: u32,
+    pub samples: u32, // paths per pixel per dispatch
     pub res: [f32; 2],
     pub tan_fov: f32,
     pub aspect: f32,
@@ -377,7 +377,7 @@ impl Renderer {
         (self.config.width, self.config.height)
     }
 
-    fn uniforms(&self, cam: &Camera, opt: &Options) -> Uniforms {
+    fn uniforms(&self, cam: &Camera, opt: &Options, samples: u32) -> Uniforms {
         let sub = |a: [f32; 3], b: [f32; 3]| [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
         let cross = |a: [f32; 3], b: [f32; 3]| {
             [
@@ -411,7 +411,7 @@ impl Renderer {
             up,
             flags,
             fwd,
-            _pad0: 0,
+            samples,
             res: [self.config.width as f32, self.config.height as f32],
             tan_fov: (cam.fov / 2.0).tan(),
             aspect: self.config.width as f32 / self.config.height as f32,
@@ -448,23 +448,24 @@ impl Renderer {
             self.need_clear = false;
         }
 
-        for _ in 0..samples_per_frame.max(1) {
-            self.queue.write_buffer(&self.uniform_buf, 0, bytemuck::bytes_of(&self.uniforms(cam, opt)));
-            {
-                let mut pass = encoder.begin_compute_pass(&Default::default());
-                pass.set_pipeline(&self.trace_pipeline);
-                pass.set_bind_group(0, self.trace_bind.as_ref().unwrap(), &[]);
-                pass.dispatch_workgroups(self.config.width.div_ceil(8), self.config.height.div_ceil(8), 1);
-            }
-            // Each pass needs its own uniform frame index; submit so the
-            // write_buffer for the next pass lands after this dispatch.
-            self.queue.submit(Some(std::mem::replace(
-                &mut encoder,
-                self.device.create_command_encoder(&Default::default()),
-            ).finish()));
-            self.frame += 1;
-            self.sample_count += 1;
+        // One dispatch traces `samples_per_frame` full paths per pixel;
+        // the shader loops internally, which keeps the GPU saturated
+        // instead of being capped at one sample per vsync interval.
+        let samples = samples_per_frame.max(1);
+        self.queue.write_buffer(
+            &self.uniform_buf,
+            0,
+            bytemuck::bytes_of(&self.uniforms(cam, opt, samples)),
+        );
+        {
+            let mut pass = encoder.begin_compute_pass(&Default::default());
+            pass.set_pipeline(&self.trace_pipeline);
+            pass.set_bind_group(0, self.trace_bind.as_ref().unwrap(), &[]);
+            pass.dispatch_workgroups(self.config.width.div_ceil(8), self.config.height.div_ceil(8), 1);
         }
+        // Advance the RNG stream past every sample this dispatch consumed.
+        self.frame += samples;
+        self.sample_count += samples;
 
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {

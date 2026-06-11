@@ -62,8 +62,20 @@ restarts accumulation — a live design-render loop.
 The window title shows live stats: triangle count, accumulated samples per
 pixel, fps, bounce count.
 
-## Notes
+## Performance & verifying GPU use
 
+- At startup the viewer logs the adapter it picked, e.g.
+  `GPU: NVIDIA GeForce RTX 3080 (DiscreteGpu, Vulkan)`. If you see
+  `llvmpipe` or `Cpu`, wgpu fell back to software rendering — check your
+  Vulkan driver (`vulkaninfo --summary`); `nvidia-smi` should show the
+  viewer process while it runs.
+- Sampling is **adaptive**: while you drag, it traces 1 path/pixel/frame
+  for fluid interaction; when the camera rests, it ramps up the paths per
+  frame until the GPU fills a ~30–50ms frame budget. The title bar shows
+  the live rate, e.g. `4210 spp (9800/s, 160x61fps)` — accumulated samples,
+  samples per second, and samples-per-frame × fps. On a discrete NVIDIA
+  card expect thousands of samples/s at 1080p; if the rate stays near 60/s,
+  you are on the software fallback.
 - The renderer needs a GPU with compute support — any Vulkan-capable GPU on
   Linux (NVIDIA, AMD, Intel) or any Apple-silicon/Metal Mac. If the wrong
   GPU is picked on a multi-GPU laptop, wgpu honors backend/adapter

@@ -83,6 +83,10 @@ struct App {
     fps_frames: u32,
     fps_t0: Instant,
     fps: f32,
+    /// Paths per pixel per frame, adapted to the frame budget so a fast GPU
+    /// accumulates hundreds of samples per refresh instead of one.
+    spp: u32,
+    last_redraw: Option<Instant>,
 }
 
 impl App {
@@ -103,6 +107,8 @@ impl App {
             fps_frames: 0,
             fps_t0: Instant::now(),
             fps: 0.0,
+            spp: 1,
+            last_redraw: None,
         }
     }
 
@@ -154,6 +160,14 @@ impl App {
         }
     }
 
+    /// Reset for continuous interaction (orbit/pan/zoom): also drop to one
+    /// sample per frame so the view stays fluid while dragging.
+    fn interact_reset(&mut self) {
+        self.spp = 1;
+        self.last_redraw = None;
+        self.reset();
+    }
+
     fn screenshot(&self) {
         let Some(r) = &self.renderer else { return };
         let (w, h, rgb) = r.read_image(self.options.exposure);
@@ -178,11 +192,14 @@ impl App {
         }
         self.last_title = Instant::now();
         if let (Some(w), Some(r)) = (&self.window, &self.renderer) {
+            let rate = self.fps * self.spp as f32;
             w.set_title(&format!(
-                "{} — {} tris · {} spp · {:.0} fps · bounces {} · {}{}",
+                "{} — {} tris · {} spp ({:.0}/s, {}x{:.0}fps) · bounces {} · {}{}",
                 self.scene_name,
                 self.tri_count,
                 r.sample_count,
+                rate,
+                self.spp,
                 self.fps,
                 self.options.bounces,
                 if self.options.dispersion { "dispersion" } else { "no dispersion" },
@@ -244,8 +261,9 @@ impl ApplicationHandler<UserEvent> for App {
 
             WindowEvent::RedrawRequested => {
                 let cam = self.camera();
+                let spp = self.spp;
                 if let Some(r) = &mut self.renderer {
-                    if let Err(e) = r.render(&cam, &self.options, 1) {
+                    if let Err(e) = r.render(&cam, &self.options, spp) {
                         log::warn!("render: {e}");
                     }
                     self.fps_frames += 1;
@@ -256,6 +274,19 @@ impl ApplicationHandler<UserEvent> for App {
                         self.fps_t0 = Instant::now();
                     }
                 }
+                // Adapt samples/frame to the frame budget: grow while frames
+                // come in under ~25ms (i.e. the GPU has headroom under
+                // vsync), back off past ~50ms to stay interactive.
+                let now = Instant::now();
+                if let Some(prev) = self.last_redraw {
+                    let dt = now.duration_since(prev).as_secs_f32();
+                    if dt < 0.025 {
+                        self.spp = (self.spp + (self.spp / 3).max(1)).min(1024);
+                    } else if dt > 0.050 {
+                        self.spp = (self.spp * 2 / 3).max(1);
+                    }
+                }
+                self.last_redraw = Some(now);
                 self.update_title();
                 if let Some(w) = &self.window {
                     w.request_redraw(); // continuous progressive rendering
@@ -299,7 +330,7 @@ impl ApplicationHandler<UserEvent> for App {
                     self.orbit.theta += dx * 0.008;
                     self.orbit.phi = (self.orbit.phi + dy * 0.008).clamp(-1.5, 1.5);
                 }
-                self.reset();
+                self.interact_reset();
             }
 
             WindowEvent::MouseWheel { delta, .. } => {
@@ -308,7 +339,7 @@ impl ApplicationHandler<UserEvent> for App {
                     MouseScrollDelta::PixelDelta(p) => p.y as f32,
                 };
                 self.orbit.dist = (self.orbit.dist * (-amount * 0.0024).exp()).clamp(0.3, 300.0);
-                self.reset();
+                self.interact_reset();
             }
 
             WindowEvent::ModifiersChanged(m) => {
