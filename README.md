@@ -7,6 +7,14 @@ ray tracer for visualization.
 
 Everything is plain ES modules: **no build step, no dependencies**.
 
+![Demo sculpture, CPU reference render](docs/demo_render_cpu.png)
+
+*The demo sculpture rendered by the CPU reference tracer (128 spp — the
+colored speckle is spectral sampling noise that converges away; the GPU
+version accumulates thousands of samples interactively). Visible: seamless
+glue joints, dichroic color splitting inside the laminate, and dispersion
+sparkle on the beveled edges.*
+
 ## Running
 
 Serve the directory with any static file server and open `index.html`:
